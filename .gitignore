@@ -15,5 +15,5 @@ bpa_runner.py
 *.json
 
 # script files
-*.ps1
+*.sh
 
