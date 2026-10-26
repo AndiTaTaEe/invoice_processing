@@ -1,0 +1,19 @@
+# environment variables file
+.env
+
+# venv directory
+phase1/
+
+# python cache files
+__pycache__/
+*.pyc
+
+# runner file
+bpa_runner.py
+
+# json files 
+*.json
+
+# script files
+*.ps1
+
