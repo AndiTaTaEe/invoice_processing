@@ -29,6 +29,5 @@ jobs:
     # run unit tests, using unittest 
     - name: Run unit tests
       run: |
-        cd tests
-        PYTHONPATH=.. python -m unittest discover -v .
+        PYTHONPATH=src python -m unittest discover -s tests -t . -v
     
