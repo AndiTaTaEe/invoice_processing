@@ -108,6 +108,9 @@ class HTTPClient:
         return self.request("POST", path, body=body, idem_key=idem_key)
 
     def request(self, method, path, body=None, idem_key=None):
+        """
+        make an HTTP request to the given path with the given method, body, and idem_key. retry on 5xx status codes, network errors, and timeouts. raise an APIError for other errors.
+        """
         method = method.upper() # ensure the method is uppercase
         if method == "POST" and not idem_key:
             raise ValueError("idem_key is required for POST requests")
