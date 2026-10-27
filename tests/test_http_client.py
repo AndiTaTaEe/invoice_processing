@@ -99,7 +99,7 @@ class HTTPClientTests(unittest.TestCase):
     def test_429_rate_limited_gives_up_after_10_waits(self):
         script = [(429, {}, error("RATE_LIMITED"))] * 11 # 11 consecutive 429 responses
         with TestServer(script) as server:
-            with self.assertRaises(RunRequestLimit) as context:
+            with self.assertRaises(APIError) as context:
                 self.client(server.url).get("/inbox")
         self.assertEqual(len(server.requests), 11) # assert that 11 requests were made
         self.assertEqual(len(self.slept), 10) # assert that 10 sleeps were made (the 11th request does not sleep)
