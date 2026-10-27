@@ -3,7 +3,7 @@ import socket
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from http_client import APIError, RunRequestLimit, HTTPClient
+from invoice_processing.http_client import APIError, RunRequestLimit, HTTPClient
 
 def error(code, message="x"):
     """
