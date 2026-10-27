@@ -157,6 +157,7 @@ class HTTPClientTests(unittest.TestCase):
             (503, {}, error("X")),
             (201, {}, {"ok": 1})
         ]
+        body = {"document_id": "DOC-1", "reason_codes": ["A", "B"]}
         with TestServer(script) as server:
             self.client(server.url).post("/decisions", body, "DOC-1:decision")
         keys = {r[2] for r in server.requests} # get the set of idempotency keys used in the requests
