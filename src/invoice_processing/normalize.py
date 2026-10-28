@@ -113,5 +113,15 @@ def round_half_up(value: Decimal) -> Decimal:
     ex: 0.005 -> 0.01
     """
     return value.quantize(CENT, rounding=ROUND_HALF_UP)
-    
 
+def format_amount(value: Decimal) -> str:
+    """
+    format a decimal number as a string with 2 decimal places, using the "round half up" method.
+    used for net_amount/gross_amount in the invoice
+    it should be a string of digits with exactly 2 decimal places, and the integer part should be between 1 and 13 digits long. If the value is not valid, raise a ValueError.
+    """
+    text = format(round_half_up(value), "f") # round the value to 2 decimal places and format it as a floating-point number string
+    integer_part, _, fractional_part = text.partition(".") # split the string into integer and fractional parts
+    if not (1 <= len(integer_part) <= 13 and len(fractional_part) == 2 and set(integer_part + fractional_part).issubset(_DIGIT_CHARS)):
+        raise ValueError(f"Invalid amount: {value}") # if the integer part is not between 1 and 13 digits, or the fractional part is not exactly 2 digits, or if there are non-digit characters, raise a ValueError
+    return text
