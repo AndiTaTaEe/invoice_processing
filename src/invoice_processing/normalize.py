@@ -50,3 +50,11 @@ def normalize_invoice_number(invoice_number: str) -> str:
 
     # join the pieces together to form the normalized invoice number
     return "".join(pieces)
+
+def normalize_iban(iban: str) -> str:
+    """
+    Normalize the IBAN of a bank account.
+    The IBAN is expected to be a string that may contain whitespaces and lowercase letters. The normalized IBAN should be a string without any whitespaces and with uppercase letters.
+    """
+    # delete the whitespaces that may be present within the IBAN string, and make it uppercase to ensure consistency
+    return iban.replace(" ", "").upper()
