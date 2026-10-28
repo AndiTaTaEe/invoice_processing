@@ -3,9 +3,9 @@ name: Run python tests
 # trigger the workflow on push or pull request events to the main branch
 on:
   push:
-    branches: [ "main "]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "main "]
+    branches: [ "main" ]
 
 jobs:
   test:

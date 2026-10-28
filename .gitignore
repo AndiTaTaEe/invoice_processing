@@ -17,3 +17,5 @@ bpa_runner.py
 # script files
 *.sh
 
+# log directory - only for local testing
+logs/
