@@ -4,7 +4,7 @@ Its responsibility is to take raw invoice data that needs to be normalized (CUI,
 """
 
 from itertools import groupby
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 # define sets of characters that are considered valid for normalization (used in the normalize_invoice_number function)
 _ALPHANUMERIC_CHARS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
@@ -17,6 +17,9 @@ FORMATS = {
     "pdf_en": (".", ","),
     "pdf_bilingual": (".", ",")
 }
+
+# constants 
+CENT = Decimal("0.01")  # define a constant for one cent, used for rounding decimal numbers
 
 def normalize_cui(cui: str) -> str:
     """
@@ -103,5 +106,12 @@ def parse_percent(text, decimal_sep=".", thousands_sep=""):
     if s.endswith("%"):
         s = s[:-1]
     return parse_decimal(s, decimal_sep, thousands_sep)
+
+def round_half_up(value: Decimal) -> Decimal:
+    """
+    round a decimal number to 2 decimal places using the "round half up" method. This means that if the number is exactly halfway between two possible rounded values, it will be rounded up to the nearest value.
+    ex: 0.005 -> 0.01
+    """
+    return value.quantize(CENT, rounding=ROUND_HALF_UP)
     
 
