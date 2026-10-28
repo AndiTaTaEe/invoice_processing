@@ -3,7 +3,7 @@ import os
 import json
 from http_client import HTTPClient, APIError, RunRequestLimit, path_segment
 
-# set up logging to log to stdout with level INFO
+# set up logging to log to stderr with level INFO
 logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(message)s")
 
 def main():
