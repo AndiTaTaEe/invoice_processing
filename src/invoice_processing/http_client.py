@@ -89,6 +89,12 @@ class HTTPClient:
             path = f"{path}?{urllib.parse.urlencode(params)}" # append query parameters to the path if present
         return self.request("GET", path)
 
+    def get_bytes(self, path):
+        """
+        make a GET request to the given path and return raw response (XML/PDF file) as bytes
+        """
+        return self.request("GET", path, as_bytes=True)
+
     def get_optional(self, path, params=None):
         """
         GET request that return None if the resource doesnt exist (404). any other error will raise an APIError
@@ -107,7 +113,7 @@ class HTTPClient:
         """
         return self.request("POST", path, body=body, idem_key=idem_key)
 
-    def request(self, method, path, body=None, idem_key=None):
+    def request(self, method, path, body=None, idem_key=None, as_bytes=False):
         """
         make an HTTP request to the given path with the given method, body, and idem_key. retry on 5xx status codes, network errors, and timeouts. raise an APIError for other errors.
         """
@@ -131,6 +137,8 @@ class HTTPClient:
         while True:
             status, response_headers, raw_response = self._send(method, url, data, headers)
             if status is not None and 200 <= status < 300:
+                if as_bytes:
+                    return raw_response # return the raw response body as bytes if requested
                 return json.loads(raw_response) if raw_response else None # return the parsed JSON response if present, otherwise return None 
             code, message = _error_info(raw_response) # extract the error code and message from the raw response body
 
