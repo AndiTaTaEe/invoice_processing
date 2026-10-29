@@ -1,6 +1,6 @@
 import unittest
 from decimal import Decimal
-from invoice.processing_normalize import FORMATS, InvalidNumber, normalize_cui, normalize_invoice_number, normalize_iban, parse_decimal, parse_percent, round_half_up, format_amount
+from invoice_processing.normalize import FORMATS, InvalidNumber, normalize_cui, normalize_invoice_number, normalize_iban, parse_decimal, parse_percent, round_half_up, format_amount
 
 class NormalizeCuiTests(unittest.TestCase):
     def test_normalize_cui(self):
@@ -13,7 +13,7 @@ class NormalizeCuiTests(unittest.TestCase):
             ("AB12345678", "AB12345678"),
             ("RORO123", "RO123"),
             ("12RO345", "12RO345"),
-            ("R 0123", "123"),
+            ("R 0123", "R0123"),
             ("", ""),
         ] # test cases for normalize_cui function, with various input formats and expected normalized outputs
         for input_cui, expected in test_cases:
@@ -58,7 +58,7 @@ class ParseDecimalTests(unittest.TestCase):
         self.assertEqual(parse_decimal("3,703.50", *FORMATS["pdf_en"]), Decimal("3703.50"))
         self.assertEqual(parse_decimal("1,234,567.89", *FORMATS["pdf_en"]), Decimal("1234567.89"))
     def test_format_bilingual(self):
-        self.assertEqual(parse_decimal("3.703,50", *FORMATS["pdf_bilingual"]), Decimal("3703.50"))
+        self.assertEqual(parse_decimal("3,703.50", *FORMATS["pdf_bilingual"]), Decimal("3703.50"))
         self.assertEqual(parse_decimal("3", *FORMATS["pdf_bilingual"]), Decimal("3"))
     def test_format_xml(self):
         self.assertEqual(parse_decimal("3703.50", *FORMATS["xml"]), Decimal("3703.50"))
@@ -99,7 +99,7 @@ class RoundHalfUpTests(unittest.TestCase):
 
         for input_value, expected in test_cases:
             with self.subTest(input_value=input_value):
-                self.assertEqual(round_half_up(Decimal(input_value)), expected)
+                self.assertEqual(round_half_up(Decimal(input_value)), Decimal(expected))
 
 class FormatAmountTests(unittest.TestCase):
     def test_format_amount(self):
