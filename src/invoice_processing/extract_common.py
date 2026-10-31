@@ -10,6 +10,7 @@ _DIGITS = set("0123456789")
 DATE_FORMATS = {
     "iso": ("-", (4, 2, 2), (0, 1, 2)),  # YYYY-MM-DD, useful for XML + PDF english
     "dmy": (".", (2, 2, 4), (2, 1, 0)),  # DD.MM.YYYY, useful for PDF ro and bilingual
+}
 
 def required_text(raw: Optional[str], name: str) -> str:
     """
@@ -48,7 +49,7 @@ def _parse_date(text: str, format:str, name: str) -> date:
 def required_date(raw: Optional[str], format: str, name: str) -> date:
     return _parse_date(required_text(raw, name), format, name)
 
-def optional_date(raw: Optiona[l[str], format: str, name: str) -> Optional[date]:
+def optional_date(raw: Optional[str], format: str, name: str) -> Optional[date]:
     text = optional_text(raw)
     return None if text is None else _parse_date(text, format, name)
 
