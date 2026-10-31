@@ -14,7 +14,7 @@ class InvoiceLine:
     """a line in an invoice, with the values extracted from the document"""
     quantity: Decimal
     unit_price: Decimal
-    total: Decimal
+    line_amount: Decimal
     vat_rate: Decimal
 
 @dataclass(frozen=True)
