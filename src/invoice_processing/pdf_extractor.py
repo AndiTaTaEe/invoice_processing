@@ -117,7 +117,7 @@ def split_label(row: str):
     function for splittting the labels in key-value pairs, using the ":" separator, returns None if the row doesn't contain a label, or if the row is empty. The label and value are stripped of leading and trailing whitespace.
     """
     row = row.strip()
-    label, sep, value = row.partition(":") # split the row into label and value using the ":" separator
+    label, sep, value = row.partition(": ") # split the row into label and value using the ":" separator
     if sep:
         return label.strip(), value.strip() # return the label and value, stripping any leading or trailing whitespace
     if row.endswith(":"):
