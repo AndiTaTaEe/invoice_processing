@@ -65,7 +65,7 @@ TEMPLATES = {
         },
     ),
     "bilingual": Template(
-        name="bilingual", title="FACTURA / INVOICE", decimal=".", thousands=",", date_format="dmy", notes_label="Mentiuni / Notes", two_colums=False,
+        name="bilingual", title="FACTURA / INVOICE", decimal=".", thousands=",", date_format="dmy", notes_label="Mentiuni / Notes", two_columns=False,
         labels={
             "number": "Numar / Number",
             "issue_date": "Data / Date",
@@ -188,7 +188,7 @@ def parse_table_row(row: str, template: Template):
     label = f"line {cells[0]}" # create a label for the line using the first cell, which is expected to be a line number
     dec, thousands = template.decimal, template.thousands
     return InvoiceLine(
-        quantity=required_decimal(cells[3], f"{label}: quantity", dec, "")
+        quantity=required_decimal(cells[3], f"{label}: quantity", dec, ""),
         unit_price=required_decimal(cells[4], f"{label}: unit price", dec, ""),
         line_amount=required_decimal(cells[5], f"{label}: line amount", dec, thousands),
         vat_rate=required_percent(cells[6], f"{label}: vat rate", dec, ""),
