@@ -128,9 +128,9 @@ def _cut_points(piece: str) -> list:
     points = set()
     for marker in COLUMN_MARKERS:
         start = piece.find(marker, 1) # find the marker in the piece, starting from index 1 to avoid matching the first character
-    while start != -1:
-        points.add(start) # add the index of the marker to the set of points
-        start = piece.find(marker, start + 1) # find the next occurrence of the marker in the piece, starting from the index after the last found marker
+        while start != -1:
+            points.add(start) # add the index of the marker to the set of points
+            start = piece.find(marker, start + 1) # find the next occurrence of the marker in the piece, starting from the index after the last found marker
     return sorted(points) # return the sorted list of points where the markers were found
 
 def split_segments(row: str) -> list:
