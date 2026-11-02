@@ -5,37 +5,10 @@ from invoice_processing.http_client import HTTPClient, APIError, RunRequestLimit
 from invoice_processing.invoice import Unreadable
 from invoice_processing.pdf_extractor import extract_pdf
 from invoice_processing.xml_extractor import extract_xml
+from invoice_processing.extract import extract_invoice
 
 # set up logging to log to stderr with level INFO
 logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(message)s")
-
-def detect_document_type(data: bytes) -> str:
-    if data.startswith(b"%PDF"):
-        return "pdf"
-    if data.lstrip(b"\xef\xbb\xbf \t\r\n").startswith(b"<"):
-        return "xml"
-    return "unknown"
-
-def extract_invoice(data: bytes, content_type: str):
-    """
-    extract an invoice from the given data, using the appropriate extractor based on the declared content type. If the declared content type is not supported, raise an Unreadable exception. If the detected document type does not match the expected type, log a warning message.
-    """
-    declared_type = content_type.split(";", 1)[0].strip().lower() # get the declared content type from the content_type header, ignoring any parameters
-
-    extractors = {
-        "application/pdf": ("pdf", extract_pdf),
-        "application/xml": ("xml", extract_xml),
-    }
-    try:
-        expected_type, extractor = extractors[declared_type]
-    except KeyError:
-        raise Unreadable(f"Unsupported content type: {declared_type}") from None
-    detected_type = detect_document_type(data)
-    if detected_type != "unknown" and detected_type != expected_type:
-        logging.warning("Content type mismatch: declared=%s, detected=%s", declared_type, detected_type)
-    return extractor(data)
-
-
 
 def main():
     # read BASE_URL as first cli argument, otherwise read from BPA_BASE_URL
