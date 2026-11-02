@@ -29,21 +29,23 @@ def main():
         config = client.get("/config")
         inbox = client.get("/inbox")
         history = client.get("/history")
-        processed_document_ids = {
-            entry["document_id"] for entry in history
-        }
+        decided = {entry["document_id"]: entry for entry in history} # create a dictionary of document_id to history entry for quick lookup
         for item in inbox:
             document_id = item["document_id"]
-
-            if document_id in processed_document_ids:
-                logging.info("Document %s already processed, skipping.", document_id)
+            decision = decided.get(document_id)
+            if decision is not None:
+                logging.info("Document %s has already been processed with decision (%s, %s)", document_id, decision["source"], decision["outcome"])
+                # TODO - EARLIER_RUN - raport ALREADY_PROCESSED; THIS_RUN - missing notification + raport RECORDED
                 continue
             try:
                 data = client.get_bytes(f"/documents/{path_segment(document_id)}")
                 invoice = extract_invoice(data, item["content_type"])
                 logging.info("Extracted %s: invoice=%s, supplier_cui=%s", document_id, invoice.number, invoice.supplier_cui)
             except Unreadable as err:
-                logging.error("Extraction failed for %s: %s", document_id, err)
+                logging.warning("Extraction failed for %s: %s", document_id, err)
+                  # TODO: decizie MANUAL_REVIEW / EXTRACTION_FAILED, cu câmpurile de la supplier_cui la gross_amount = null
+                  #       (se sare peste A-R15 și peste toate regulile, dar notificarea AP_REVIEWER se trimite)
+
     except APIError as err:
         # if an APIError occurs, log the error details and exit with status code 1
         logging.error("APIError: %s", err)
