@@ -59,15 +59,28 @@ def history_decision(entries):
 
     return entries[-1]
 
-def history_has_duplicate(entries, current_document_id):
+def history_has_duplicate(entries, current_document_id, inbox):
     """
-    a document is considered a duplicate if there is another document with the same normalized supplier CUI and invoice number that has a non REJECTED outcome in the history.
-    """
-    for entry in entries:
-        if entry.get("document_id") == current_document_id:
-            continue
+    returns True if the history entries contain a duplicate of the current document. 
 
-        if entry.get("outcome") != "REJECTED":
+    """
+    positions = {
+        item["document_id"]: index for index, item in enumerate(inbox)
+    } # map document IDs to their positions in the inbox
+    current_position = positions[current_document_id] # get the position of the current document in the inbox
+
+    for entry in entries:
+        other_id = entry.get("document_id") # get the document ID of the history entry
+
+        if other_id == current_document_id:
+            continue
+        source = entry.get("source") # get the source of the history entry (e.g., "EARLIER_RUN" or "THIS_RUN")
+        outcome = entry.get("outcome") # get the outcome of the history entry (e.g., "APPROVED", "REJECTED", etc.)
+
+        if source == "EARLIER_RUN" and outcome != "REJECTED":
+            return True
+
+        if (source == "THIS_RUN" and outcome == "APPROVED" and positions.get(other_id, -1) < current_position):
             return True
 
     return False
@@ -94,22 +107,32 @@ def notification_recipient(config, role, supplier):
     if role == "SUPPLIER":
         if supplier is None:
             return None
+
         return supplier["email"]
+
     return config["recipients"][role]
 
 def send_missing_notifications(client, config, document_id, outcome, codes, supplier, existing_notifications):
+    """
+    Sends notifications for a given document based on its outcome and reason codes.
+    """
     already_sent = {
         notification["recipient_role"] for notification in existing_notifications
     }
     matrix = config["notification_matrix"].get(outcome, [])
+
     for row in matrix:
         role = row["recipient_role"]
+    
         if role in already_sent:
             continue
+     
         recipient = notification_recipient(config, role, supplier)
+     
         if recipient is None:
             logging.info("%s notification skipped for %s: supplier unavailable", role, document_id)
             continue
+     
         body = {
             "document_id": document_id,
             "recipient_role": role,
@@ -123,6 +146,9 @@ def send_missing_notifications(client, config, document_id, outcome, codes, supp
         logging.info("%s notification sent for %s to %s", role, document_id, recipient)
 
 def submit_decision(client, document_id, outcome, codes, invoice):
+    """
+    submits a decision for a given document to the API. Returns True if the decision was recorded successfully, False if it failed permanently after retries.
+    """
     body = decision_body(document_id, outcome, codes, invoice)
     key = f"{document_id}:decision"
     try:
@@ -136,6 +162,9 @@ def submit_decision(client, document_id, outcome, codes, invoice):
         raise
 
 def process_already_decided(client, config, item, decision, report_items):
+    """
+    Processes a document that has already been decided in a previous run. It checks if the decision was made in an earlier run or the current run and handles notifications accordingly.
+    """
     document_id = item["document_id"]
     outcome = decision["outcome"]
     codes = tuple(decision.get("reason_codes", []))
@@ -155,6 +184,7 @@ def process_already_decided(client, config, item, decision, report_items):
     supplier = None
     if any(row["recipient_role"] == "SUPPLIER" for row in config["notification_matrix"].get(outcome, [])):
         supplier_cui = decision.get("supplier_cui")
+    
         if supplier_cui is not None:
             supplier = get_supplier(client, supplier_cui)
     
@@ -162,7 +192,10 @@ def process_already_decided(client, config, item, decision, report_items):
     report_items.append(report_item(document_id, "RECORDED", outcome, codes))
     logging.info("%s: replayed decision=%s codes=%s", document_id, outcome, ",".join(codes) or "-")
 
-def process_normal_document(client, config, context, item, all_history, report_items):
+def process_normal_document(client, config, context, item, inbox, all_history, report_items):
+    """
+    processes a document that has not been decided yet. It extracts the invoice, checks for duplicates, evaluates the invoice, submits the decision, and sends notifications as needed.
+    """
     document_id = item["document_id"]
     try:
         data = client.get_bytes(f"/documents/{path_segment(document_id)}")
@@ -172,6 +205,7 @@ def process_normal_document(client, config, context, item, all_history, report_i
         outcome = "MANUAL_REVIEW"
         codes = ("EXTRACTION_FAILED",)
         recorded = submit_decision(client, document_id, outcome, codes, None)
+
         if recorded:
             supplier = None
             notifications = []
@@ -181,11 +215,14 @@ def process_normal_document(client, config, context, item, all_history, report_i
             status = "FAILED"
         report_items.append(report_item(document_id, status, outcome, codes))
         return
+
     duplicate_history = get_duplicate_history(client, invoice)
-    if history_has_duplicate(duplicate_history, document_id):
+
+    if history_has_duplicate(duplicate_history, document_id, inbox):
         outcome = "DUPLICATE"
         codes = ("DUPLICATE_INVOICE",)
         recorded = submit_decision(client, document_id, outcome, codes, invoice)
+    
         if recorded:
             supplier = get_supplier(client, invoice.supplier_cui)
             send_missing_notifications(client, config, document_id, outcome, codes, supplier, [])
@@ -194,6 +231,7 @@ def process_normal_document(client, config, context, item, all_history, report_i
             status = "FAILED"
         report_items.append(report_item(document_id, status, outcome, codes))
         return
+    
     supplier = get_supplier(client, invoice.supplier_cui)
     po = None
     if invoice.po_number is not None:
@@ -202,7 +240,8 @@ def process_normal_document(client, config, context, item, all_history, report_i
     effective_balance = Decimal("0")
 
     if po is not None:
-        effective_balance = Decimal(str(po["remaining_balance"]))
+        effective_balance = effective_balance_for_restart(po=po, current_document_id=document_id, inbox=inbox, all_history=all_history)
+    
     business_date = date.fromisoformat(context["business_date"]) 
 
     outcome, codes = evaluate(
@@ -213,7 +252,9 @@ def process_normal_document(client, config, context, item, all_history, report_i
         business_date=business_date,
         effective_balance=effective_balance
     )
+
     recorded = submit_decision(client, document_id, outcome, codes, invoice)
+    
     if recorded:
         notifications = []
         send_missing_notifications(client, config, document_id, outcome, codes, supplier, notifications)
@@ -227,6 +268,7 @@ def process_normal_document(client, config, context, item, all_history, report_i
 def submit_report(client, report_items):
     body = {"items": report_items}
     report_number = 1
+    
     while True:
         key = "report" if report_number == 1 else f"report-{report_number}"
         try:
@@ -240,6 +282,38 @@ def submit_report(client, report_items):
                 continue
             raise
 
+def effective_balance_for_restart(po, current_document_id, inbox, all_history):
+    """
+    re-add the net amounts of later THIS_RUN approved documents using the same PO
+    it's needed when the current document had FAILED previously and later documents were approved, so the effective balance is lower than it was when the current document was first processed.
+    """
+    if po is None:
+        return Decimal("0")
+
+    balance = Decimal(str(po["remaining_balance"]))
+    positions = {
+        item["document_id"]: index for index, item in enumerate(inbox)
+    }
+    current_position = positions[current_document_id]
+    
+    for decision in all_history:
+        if decision.get("source") != "THIS_RUN":
+            continue
+        if decision.get("outcome") != "APPROVED":
+            continue
+        document_id = decision.get("document_id")
+        later_position = positions.get(document_id)
+        if later_position is None:
+            continue
+        if later_position <= current_position:
+            continue
+        if decision.get("po_number") != po["po_number"]:
+            continue
+        net_amount = decision.get("net_amount")
+        if net_amount is None:
+            continue
+        balance += Decimal(str(net_amount))
+    return balance
 
 
 def main():
@@ -270,7 +344,7 @@ def main():
             if decision is not None:
                 process_already_decided(client, config, item, decision, report_items)
                 continue
-            process_normal_document(client, config, context, item, all_history, report_items)
+            process_normal_document(client, config, context, item, inbox, all_history, report_items)
         
         submit_report(client, report_items)
         return 0
