@@ -3,6 +3,7 @@ import os
 import json
 from datetime import date
 from decimal import Decimal
+from collections.abc import Mapping
 
 from invoice_processing.http_client import HTTPClient, APIError, RunRequestLimit, path_segment
 from invoice_processing.invoice import Unreadable
@@ -326,18 +327,81 @@ def effective_balance_for_restart(po, current_document_id, inbox, all_history):
         balance += Decimal(str(net_amount))
     return balance
 
+from collections.abc import Mapping
+from decimal import Decimal
+
+
 def receipt_map(receipts):
     """
-    returns a map of item_code to received and invoiced quantities from the list of receipts.
-    """
-    result = {}
-    for receipt in receipts:
-        result[receipt["item_code"]] = {
-            "received_quantity": Decimal(str(receipt["received_quantity"])),
-            "invoiced_quantity": Decimal(str(receipt["invoiced_quantity"])),
-        }
-    return result
+    Convert the hub response into:
 
+    {
+        item_code: {
+            "received_quantity": Decimal,
+            "invoiced_quantity": Decimal,
+        }
+    }
+    """
+    if isinstance(receipts, list):
+        rows = receipts
+
+    elif isinstance(receipts, Mapping):
+        # Accept a wrapped list, if the endpoint returns {"items": [...]}
+        if isinstance(receipts.get("items"), list):
+            rows = receipts["items"]
+
+        elif isinstance(receipts.get("goods_receipts"), list):
+            rows = receipts["goods_receipts"]
+
+        else:
+            # Accept {"K": {...}, "L": {...}}
+            rows = []
+
+            for item_code, values in receipts.items():
+                if not isinstance(values, Mapping):
+                    raise ValueError(
+                        "Unsupported goods-receipts response: "
+                        f"item {item_code!r} has value "
+                        f"{values!r}, expected an object"
+                    )
+
+                rows.append({
+                    "item_code": item_code,
+                    **values,
+                })
+
+    else:
+        raise ValueError(
+            "Unsupported goods-receipts response type: "
+            f"{type(receipts).__name__}"
+        )
+
+    result = {}
+
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise ValueError(
+                "Unsupported goods-receipts row: "
+                f"{row!r}"
+            )
+
+        try:
+            item_code = row["item_code"]
+        except KeyError:
+            raise ValueError(
+                f"Goods-receipts row has no item_code: {row!r}"
+            ) from None
+
+        result[item_code] = {
+            "received_quantity": Decimal(
+                str(row.get("received_quantity", "0"))
+            ),
+            "invoiced_quantity": Decimal(
+                str(row.get("invoiced_quantity", "0"))
+            ),
+        }
+
+    return result
 def approved_later_invoices(client, current_document_id, invoice, inbox, all_history):
     """
     returns a list of invoices that were approved later in the same run, using the same PO number as the current invoice.
