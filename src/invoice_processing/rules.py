@@ -2,6 +2,7 @@ from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
+from .normalize import normalize_cui, normalize_iban
 
 CENT_FACTOR = Decimal("0.01")
 
@@ -42,13 +43,10 @@ def _date(value: Any) -> date:
         return value
     return date.fromisoformat(str(value))
 
-def _add(codes: set[str], code: str):
-    codes.add(code)
-
 def _vat_rate_is_valid(rate: Decimal, reference_date: date, vat_rates: list[Mapping[str, Any]]) -> bool:
     """
     Check if the given VAT rate is valid for the reference date based on the provided VAT rates configuration. 
-    """
+    """     
     for vat in vat_rates:
         configured_rate = _decimal(vat["rate"])
         if configured_rate != rate:
@@ -143,57 +141,60 @@ def evaluate(invoice, supplier, po, config: Mapping[str, Any], business_date: da
     """
     codes: set[str] = set()
     tolerance = _decimal(config["amount_tolerance"])
+    business_date = _date(business_date)    
 
     # cases handled - A-R02, A-R03, A-R13
     supplier_missing = supplier is None
     if supplier_missing:
-        _add(codes, "SUPPLIER_UNKNOWN") # A-R02 - supplier not found in the system
+        codes.add("SUPPLIER_UNKNOWN") # A-R02 - supplier not found in the system
     else:
         supplier_status = _get(supplier, "status")
         if supplier_status == "INACTIVE":
-            _add(codes, "SUPPLIER_INACTIVE")
+            codes.add("SUPPLIER_INACTIVE")
         elif supplier_status == "BLOCKED":
-            _add(codes, "SUPPLIER_BLOCKED") # A-R03 - supplier is blocked or inactive, with their respective codes
+            codes.add("SUPPLIER_BLOCKED") # A-R03 - supplier is blocked or inactive, with their respective codes
 
-        if _get(supplier, "iban") != invoice.iban:
-            _add(codes, "IBAN_MISMATCH") # A-R13 - supplier IBAN does not match the one in the invoice
+        registry_iban = normalize_iban(str(_get(supplier, "iban") or ""))
+        if registry_iban != invoice.iban:
+            codes.add("IBAN_MISMATCH") # A-R13 - supplier IBAN does not match the one in the invoice
 
     # cases handled - A-R04, A-R05
     po_missing = invoice.po_number is None
     if po_missing:
-        _add(codes, "PO_MISSING") # A-R04 - invoice does not have a PO number
+        codes.add("PO_MISSING") # A-R04 - invoice does not have a PO number
     elif po is None:
-        _add(codes, "PO_NOT_FOUND") # A-R05 - PO number is provided but not found in the system
+        codes.add("PO_NOT_FOUND") # A-R05 - PO number is provided but not found in the system
 
     if not po_missing and po is not None:
         # A-R06 - PO supplier mismatch
-        if _get(po, "supplier_cui") != invoice.supplier_cui:
-            _add(codes, "PO_SUPPLIER_MISMATCH")
+        po_supplier_cui = normalize_cui(str(_get(po, "supplier_cui") or ""))
+        if not supplier_missing and po_supplier_cui != invoice.supplier_cui:
+            codes.add("PO_SUPPLIER_MISMATCH")
         
         # A-R07 - PO closed
         if _get(po, "status") == "CLOSED":
-            _add(codes, "PO_CLOSED")
+            codes.add("PO_CLOSED")
         
         # A-R08 - currency mismatch
         po_currency = _get(po, "currency")
         if po_currency != invoice.currency:
-            _add(codes, "CURRENCY_MISMATCH")
+            codes.add("CURRENCY_MISMATCH")
 
         # A-R09 - invoice before PO
         order_date = _date(_get(po, "order_date"))
         if invoice.issue_date < order_date:
-            _add(codes, "INVOICE_BEFORE_PO")
+            codes.add("INVOICE_BEFORE_PO")
 
     # A-R09 - invoice date in the future
     if invoice.issue_date > business_date:
-        _add(codes, "INVOICE_DATE_IN_FUTURE")
+        codes.add("INVOICE_DATE_IN_FUTURE")
 
     if invoice.due_date < invoice.issue_date:
-        _add(codes, "DUE_DATE_BEFORE_ISSUE") # A-R09 - due date before issue date
+        codes.add("DUE_DATE_BEFORE_ISSUE") # A-R09 - due date before issue date
 
     # A-R10 - declared sum is not equal to the sum of line amounts
     if _evaluate_total_mismatch(invoice, tolerance):
-        _add(codes, "TOTAL_MISMATCH")
+        codes.add("TOTAL_MISMATCH")
 
     # A-R11 - VAT rate invalid
     reference_date = (
@@ -203,16 +204,16 @@ def evaluate(invoice, supplier, po, config: Mapping[str, Any], business_date: da
     if any(
         not _vat_rate_is_valid(_decimal(line.vat_rate), reference_date, vat_rates) for line in invoice.lines
     ): 
-        _add(codes, "VAT_RATE_INVALID")
+        codes.add("VAT_RATE_INVALID")
 
     # A-R12 is omitted only where there s no PO or the currency mismatches. it is intentionally still checked for CLOSED or wrong-supplier POs
     if (not po_missing and po is not None and "CURRENCY_MISMATCH" not in codes and _decimal(invoice.net_total) > _decimal(effective_balance)):
-        _add(codes, "PO_BALANCE_EXCEEDED") # A-R12 - invoice net total exceeds the effective balance of the PO
+        codes.add("PO_BALANCE_EXCEEDED") # A-R12 - invoice net total exceeds the effective balance of the PO
 
     # A-r14 - gross > auto_approval_limit
     approval_limit = _approval_limit(config, invoice.currency)
     if _decimal(invoice.gross_total) > approval_limit:
-        _add(codes, "ABOVE_APPROVAL_LIMIT")
+        codes.add("ABOVE_APPROVAL_LIMIT")
 
     # Determine the outcome based on the codes
     if any(code in REJECTED_CODES for code in codes):
