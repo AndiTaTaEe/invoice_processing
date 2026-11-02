@@ -10,6 +10,7 @@ def create_invoice(**changes):
     test invoice with default values, can be overridden by passing keyword arguments
     """
     line = InvoiceLine(
+        item_code="SKU-1",
         quantity=Decimal("3"),
         unit_price=Decimal("1234.50"),
         line_amount=Decimal("3703.50"),

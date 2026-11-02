@@ -37,6 +37,7 @@ P_TOTAL_GROSS = "cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount"
 P_LINE = "cac:InvoiceLine"
 
 # relative paths to the InvoiceLine, fara ".//"
+P_ITEM_CODE = "cac:Item/cac:SellersItemIdentification/cbc:ID"
 P_QUANTITY = "cbc:InvoicedQuantity"
 P_UNIT_PRICE = "cac:Price/cbc:PriceAmount"
 P_LINE_AMOUNT = "cbc:LineExtensionAmount"
@@ -57,7 +58,9 @@ def _percent(parent, path, name):
 
 def _read_line(line, index):
     label = f"line {index}"
+    item_code = required_text(_text(line, P_ITEM_CODE), f"{label}: item code")
     return InvoiceLine(
+        item_code=item_code,
         quantity=_decimal(line, P_QUANTITY, f"{label}: quantity"),
         unit_price=_decimal(line, P_UNIT_PRICE, f"{label}: unit price"),
         line_amount=_decimal(line, P_LINE_AMOUNT, f"{label}: line amount"),

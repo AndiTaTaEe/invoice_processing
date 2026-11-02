@@ -3,6 +3,7 @@ import os
 import json
 from datetime import date
 from decimal import Decimal
+from collections.abc import Mapping
 
 from invoice_processing.http_client import HTTPClient, APIError, RunRequestLimit, path_segment
 from invoice_processing.invoice import Unreadable
@@ -96,6 +97,9 @@ def get_document_history(client, document_id):
 
 def get_duplicate_history(client, invoice):
     return client.get("/history", params={"supplier_cui": normalize_cui(invoice.supplier_cui), "invoice_number": normalize_invoice_number(invoice.number)})
+
+def get_goods_receipts(client, po_number):
+    return client.get("/goods-receipts", params={"po_number": po_number})
 
 def notification_recipient(config, role, supplier):
     """
@@ -241,6 +245,13 @@ def process_normal_document(client, config, context, item, inbox, all_history, r
 
     if po is not None:
         effective_balance = effective_balance_for_restart(po=po, current_document_id=document_id, inbox=inbox, all_history=all_history)
+
+    goods_receipts = {}
+    if (config.get("features", {}).get("three_way_match", False) and po is not None):
+        raw_receipts = get_goods_receipts(client, invoice.po_number)
+        goods_receipts = receipt_map(raw_receipts)
+        later_invoices = approved_later_invoices(client, document_id, invoice, inbox, all_history)
+        goods_receipts = add_later_approved_quantities(goods_receipts, later_invoices)
     
     business_date = date.fromisoformat(context["business_date"]) 
 
@@ -250,7 +261,8 @@ def process_normal_document(client, config, context, item, inbox, all_history, r
         po=po,
         config=config,
         business_date=business_date,
-        effective_balance=effective_balance
+        effective_balance=effective_balance,
+        goods_receipts=goods_receipts
     )
 
     recorded = submit_decision(client, document_id, outcome, codes, invoice)
@@ -315,6 +327,126 @@ def effective_balance_for_restart(po, current_document_id, inbox, all_history):
         balance += Decimal(str(net_amount))
     return balance
 
+from collections.abc import Mapping
+from decimal import Decimal
+
+
+def receipt_map(receipts):
+    """
+    Convert the hub response into:
+
+    {
+        item_code: {
+            "received_quantity": Decimal,
+            "invoiced_quantity": Decimal,
+        }
+    }
+    """
+    if isinstance(receipts, list):
+        rows = receipts
+
+    elif isinstance(receipts, Mapping):
+        # Accept a wrapped list, if the endpoint returns {"items": [...]}
+        if isinstance(receipts.get("items"), list):
+            rows = receipts["items"]
+
+        elif isinstance(receipts.get("goods_receipts"), list):
+            rows = receipts["goods_receipts"]
+
+        else:
+            # Accept {"K": {...}, "L": {...}}
+            rows = []
+
+            for item_code, values in receipts.items():
+                if not isinstance(values, Mapping):
+                    raise ValueError(
+                        "Unsupported goods-receipts response: "
+                        f"item {item_code!r} has value "
+                        f"{values!r}, expected an object"
+                    )
+
+                rows.append({
+                    "item_code": item_code,
+                    **values,
+                })
+
+    else:
+        raise ValueError(
+            "Unsupported goods-receipts response type: "
+            f"{type(receipts).__name__}"
+        )
+
+    result = {}
+
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise ValueError(
+                "Unsupported goods-receipts row: "
+                f"{row!r}"
+            )
+
+        try:
+            item_code = row["item_code"]
+        except KeyError:
+            raise ValueError(
+                f"Goods-receipts row has no item_code: {row!r}"
+            ) from None
+
+        result[item_code] = {
+            "received_quantity": Decimal(
+                str(row.get("received_quantity", "0"))
+            ),
+            "invoiced_quantity": Decimal(
+                str(row.get("invoiced_quantity", "0"))
+            ),
+        }
+
+    return result
+def approved_later_invoices(client, current_document_id, invoice, inbox, all_history):
+    """
+    returns a list of invoices that were approved later in the same run, using the same PO number as the current invoice.
+    """
+    positions = {
+        item["document_id"]: index for index, item in enumerate(inbox)
+    } # map document IDs to their positions in the inbox
+    current_position = positions[current_document_id]
+    result = []
+    for decision in all_history:
+        if decision.get("source") != "THIS_RUN":
+            continue # only consider decisions made in this run
+        if decision.get("outcome") != "APPROVED":
+            continue # only consider approved invoices
+        later_id = decision.get("document_id")
+        later_position = positions.get(later_id)
+        if later_position is None or later_position <= current_position:
+            continue
+        if decision.get("po_number") != invoice.po_number:
+            continue
+        
+        item = inbox[later_position]
+        data = client.get_bytes(f"/documents/{path_segment(later_id)}")
+        later_invoice = extract_invoice(data, item["content_type"])
+        result.append(later_invoice)
+    return result
+
+def add_later_approved_quantities(receipts, later_invoices):
+    """
+    returns a new map of item_code to received and invoiced quantities, adjusted by subtracting the quantities of later approved invoices using the same PO number.
+    """
+    adjusted = {
+        item_code: {
+            "received_quantity": Decimal(str(values["received_quantity"])),
+            "invoiced_quantity": Decimal(str(values["invoiced_quantity"])),
+        }
+        for item_code, values in receipts.items()
+    }
+
+    for invoice in later_invoices:
+        for line in invoice.lines:
+            receipt = adjusted.setdefault(line.item_code, {"received_quantity": Decimal("0"), "invoiced_quantity": Decimal("0")})
+            receipt["invoiced_quantity"] -= line.quantity
+
+    return adjusted
 
 def main():
     # read BASE_URL as first cli argument, otherwise read from BPA_BASE_URL

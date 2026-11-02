@@ -188,6 +188,7 @@ def parse_table_row(row: str, template: Template):
     label = f"line {cells[0]}" # create a label for the line using the first cell, which is expected to be a line number
     dec, thousands = template.decimal, template.thousands
     return InvoiceLine(
+        item_code=required_text(cells[1], f"{label}: item code"),
         quantity=required_decimal(cells[3], f"{label}: quantity", dec, ""),
         unit_price=required_decimal(cells[4], f"{label}: unit price", dec, ""),
         line_amount=required_decimal(cells[5], f"{label}: line amount", dec, thousands),

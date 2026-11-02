@@ -12,6 +12,7 @@ class Unreadable(Exception):
 @dataclass(frozen=True)
 class InvoiceLine:
     """a line in an invoice, with the values extracted from the document"""
+    item_code: str 
     quantity: Decimal
     unit_price: Decimal
     line_amount: Decimal

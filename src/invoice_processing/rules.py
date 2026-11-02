@@ -125,7 +125,24 @@ def _evaluate_total_mismatch(invoice, tolerance: Decimal) -> bool:
         )
     )
 
-def evaluate(invoice, supplier, po, config: Mapping[str, Any], business_date: date, effective_balance) -> tuple[str, tuple[str, ...]]:
+def _has_unreceived_quantity(invoice, goods_receipts):
+    invoiced_by_item = {}
+    for line in invoice.lines:
+        invoiced_by_item[line.item_code] = (invoiced_by_item.get(line.item_code, Decimal("0")) + line.quantity)
+
+    for item_code, invoiced_quantity in invoiced_by_item.items():
+        receipt = goods_receipts.get(item_code, {})
+
+        received_quantity = _decimal(receipt.get("received_quantity", Decimal("0")))
+        already_invoiced = _decimal(receipt.get("invoiced_quantity", Decimal("0")))
+
+        available_quantity = (received_quantity - already_invoiced)
+        if invoiced_quantity > available_quantity:
+            return True
+
+    return False
+
+def evaluate(invoice, supplier, po, config: Mapping[str, Any], business_date: date, effective_balance, goods_receipts=None) -> tuple[str, tuple[str, ...]]:
     """
     Evaluate an already extracted invoice.
 
@@ -184,6 +201,11 @@ def evaluate(invoice, supplier, po, config: Mapping[str, Any], business_date: da
         order_date = _date(_get(po, "order_date"))
         if invoice.issue_date < order_date:
             codes.add("INVOICE_BEFORE_PO")
+        
+        # if the PO is present, check the three way match
+        three_way_match = (config.get("features", {}).get("three_way_match", False))
+        if (three_way_match and po is not None and _has_unreceived_quantity(invoice, goods_receipts or {})):
+            codes.add("QTY_NOT_RECEIVED") # A-R19 - quantity not received 
 
     # A-R09 - invoice date in the future
     if invoice.issue_date > business_date:
