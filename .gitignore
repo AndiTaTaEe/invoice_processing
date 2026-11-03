@@ -14,9 +14,6 @@ bpa_runner.py
 # json files 
 *.json
 
-# script files
-*.sh
-
 # log directory - only for local testing
 logs/
 
